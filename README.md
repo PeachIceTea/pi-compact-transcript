@@ -4,7 +4,7 @@ A compact transcript extension for [pi](https://pi.dev).
 
 ## With the extension
 
-<img width="2131" height="552" alt="image" src="https://github.com/user-attachments/assets/4ec40fe8-13da-4415-8274-e26e43cca4e1" />
+<img width="2131" height="552" alt="With the extension" src="assets/with-extension.png" />
 
 ## Without the extension
 

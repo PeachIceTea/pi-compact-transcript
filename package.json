@@ -24,7 +24,7 @@
     "extensions": [
       "./extensions/compact-transcript.ts"
     ],
-    "image": "https://github.com/user-attachments/assets/4ec40fe8-13da-4415-8274-e26e43cca4e1"
+    "image": "https://raw.githubusercontent.com/avhagedorn/pi-compact-transcript/main/assets/with-extension.png"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
@@ -32,6 +32,7 @@
   },
   "files": [
     "extensions",
+    "assets",
     "README.md",
     "LICENSE"
   ],
