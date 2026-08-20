@@ -90,6 +90,9 @@ const STATE_KEY = Symbol.for("pi-compact-transcript.state");
 const TOOL_PATCH_KEY = Symbol.for("pi-compact-transcript.tool-patch");
 const ASSISTANT_PATCH_KEY = Symbol.for("pi-compact-transcript.assistant-patch");
 
+// Only show the startup settings tip once per pi process lifetime.
+let startupSettingsNagShown = false;
+
 function newRunStats(): RunStats {
 	return {
 		startedAt: Date.now(),
@@ -806,6 +809,35 @@ function restoreConfigFromBranch(ctx: ExtensionContext) {
 	state.config = nextConfig;
 }
 
+function checkAndNotifyRecommendedSettings(ctx: ExtensionContext) {
+	if (startupSettingsNagShown) return;
+	startupSettingsNagShown = true;
+
+	const settingsPath = join(getAgentDir(), "settings.json");
+	let settings: Record<string, unknown> = {};
+	try {
+		const raw = readFileSync(settingsPath, "utf8");
+		const parsed: unknown = JSON.parse(raw);
+		if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+			settings = parsed as Record<string, unknown>;
+		}
+	} catch {
+		// Missing or unreadable settings file — skip notification.
+		return;
+	}
+
+	const missing: string[] = [];
+	if (settings.hideThinkingBlock !== true) missing.push("hideThinkingBlock: true");
+	if (settings.outputPad !== 0) missing.push("outputPad: 0");
+
+	if (missing.length === 0) return;
+
+	ctx.ui.notify(
+		`Compact Transcript tip: set ${missing.join(", ")} in /settings for the best experience.`,
+		"info",
+	);
+}
+
 function setEnabled(enabled: boolean, pi: ExtensionAPI, ctx: ExtensionContext) {
 	state.config.enabled = enabled;
 	pi.appendEntry(CONFIG_ENTRY_TYPE, { ...state.config });
@@ -862,7 +894,7 @@ export default function compactTranscript(pi: ExtensionAPI) {
 		return new Text(theme.fg("muted", line), 0, 0);
 	});
 
-	pi.on("session_start", async (_event, ctx) => {
+	pi.on("session_start", async (event, ctx) => {
 		restoreConfigFromBranch(ctx);
 		captureTheme(ctx);
 		// Drop all per-tool state and component registries from the previous
@@ -875,6 +907,10 @@ export default function compactTranscript(pi: ExtensionAPI) {
 		ctx.ui.setWorkingMessage();
 		// Clear any footer status left behind by pre-0.4 versions of this extension.
 		ctx.ui.setStatus(STATUS_KEY, undefined);
+
+		if (event.reason === "startup") {
+			checkAndNotifyRecommendedSettings(ctx);
+		}
 	});
 
 	pi.on("session_shutdown", async (_event, ctx) => {
