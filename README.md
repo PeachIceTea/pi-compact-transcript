@@ -72,7 +72,7 @@ Example:
 }
 ```
 
-Configuration is resolved in this order (highest priority first): current-session `/compact-transcript on|off`, trusted project configuration, user-wide configuration, then the built-in default (`enabled: true`). Project configuration is ignored unless Pi reports the project as trusted. Missing files, invalid JSON, and unsupported values are ignored and the next fallback is used. Session toggles remain stored in the existing session entries, and legacy mode values remain supported.
+Configuration is resolved in this order (highest priority first): current-session `/compact-transcript on|off`, trusted project configuration, user-wide configuration, then the built-in default (`enabled: true`). Project configuration is ignored unless Pi reports the project as trusted. Missing files, invalid JSON, and unsupported values are ignored and the next fallback is used. Session toggles remain stored in the existing session entries.
 
 ## Commands
 
@@ -82,7 +82,7 @@ Configuration is resolved in this order (highest priority first): current-sessio
 /compact-transcript status   # show current state
 ```
 
-Toggling re-renders the visible transcript immediately — no reload needed. Pre-0.5 mode names (`balanced`, `aggressive`, `debug`, `disabled`) are accepted as legacy aliases for `on`/`off`.
+Toggling re-renders the visible transcript immediately — no reload needed.
 
 ## Notes
 

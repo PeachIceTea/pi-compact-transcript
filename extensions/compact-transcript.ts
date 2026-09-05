@@ -11,9 +11,6 @@ import { dirname } from "node:path";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-// Older versions of this extension wrote a footer status under this key; it is
-// kept only to clear that status once per session for users upgrading in place.
-const STATUS_KEY = "compact-transcript";
 const CONFIG_ENTRY_TYPE = "compact-transcript-config";
 const SUMMARY_ENTRY_TYPE = "compact-transcript-summary";
 
@@ -113,14 +110,7 @@ function newRunStats(): RunStats {
 
 function normalizeConfig(input: unknown, fallback = DEFAULT_CONFIG): CompactTranscriptConfig {
 	const source = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
-	let enabled = fallback.enabled;
-	if (typeof source.enabled === "boolean") {
-		enabled = source.enabled;
-	} else if (typeof source.mode === "string") {
-		// Pre-0.5 config persisted a mode string instead of an enabled flag.
-		enabled = source.mode !== "disabled" && source.mode !== "off";
-	}
-	return { enabled };
+	return { enabled: typeof source.enabled === "boolean" ? source.enabled : fallback.enabled };
 }
 
 function readConfigFile(path: string): CompactTranscriptConfig | undefined {
@@ -130,10 +120,6 @@ function readConfigFile(path: string): CompactTranscriptConfig | undefined {
 
 		const source = parsed as Record<string, unknown>;
 		if (typeof source.enabled === "boolean") return { enabled: source.enabled };
-		if (typeof source.mode === "string") {
-			// Accept the old mode spelling in extension config files too.
-			return { enabled: source.mode !== "disabled" && source.mode !== "off" };
-		}
 		return undefined;
 	} catch {
 		// Missing, unreadable, or malformed config files use the next fallback.
@@ -1037,9 +1023,7 @@ function registerCommand(pi: ExtensionAPI) {
 				setEnabled(!isEnabled(), pi, ctx);
 				return;
 			}
-			// on/off, plus pre-0.5 mode names as legacy aliases.
-			const legacyOn = ["balanced", "aggressive", "debug"].includes(trimmed);
-			const parsed = legacyOn ? true : parseBoolean(trimmed);
+			const parsed = parseBoolean(trimmed);
 			if (parsed !== undefined) {
 				setEnabled(parsed, pi, ctx);
 				return;
@@ -1070,8 +1054,6 @@ export default function compactTranscript(pi: ExtensionAPI) {
 		state.toolComponents = new Set();
 		state.assistantComponents = new Set();
 		ctx.ui.setWorkingMessage();
-		// Clear any footer status left behind by pre-0.4 versions of this extension.
-		ctx.ui.setStatus(STATUS_KEY, undefined);
 
 		if (event.reason === "startup") {
 			checkAndNotifyRecommendedSettings(ctx);
@@ -1080,7 +1062,6 @@ export default function compactTranscript(pi: ExtensionAPI) {
 
 	pi.on("session_shutdown", async (_event, ctx) => {
 		stopBlinkTimer();
-		ctx.ui.setStatus(STATUS_KEY, undefined);
 		ctx.ui.setWorkingMessage();
 	});
 
