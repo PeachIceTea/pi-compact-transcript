@@ -6,7 +6,8 @@ import {
 	ToolExecutionComponent,
 } from "@earendil-works/pi-coding-agent";
 import { type Component, Markdown, Spacer, Text, truncateToWidth } from "@earendil-works/pi-tui";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -140,9 +141,15 @@ function readConfigFile(path: string): CompactTranscriptConfig | undefined {
 	}
 }
 
+// User-wide configuration lives in this extension's own directory so it does
+// not clutter the pi agent root.
+function userConfigPath(): string {
+	return join(getAgentDir(), "extensions", "pi-compact-transcript", "compact-transcript.json");
+}
+
 function loadConfigFromFiles(ctx: ExtensionContext): CompactTranscriptConfig {
 	let nextConfig = { ...DEFAULT_CONFIG };
-	const userConfig = readConfigFile(join(getAgentDir(), "compact-transcript.json"));
+	const userConfig = readConfigFile(userConfigPath());
 	if (userConfig) nextConfig = userConfig;
 
 	// Project-local configuration is only meaningful after Pi has trusted the
@@ -891,7 +898,7 @@ function restoreConfigFromBranch(ctx: ExtensionContext) {
 }
 
 function readNagDismissedFlag(): boolean {
-	const configPath = join(getAgentDir(), "compact-transcript.json");
+	const configPath = userConfigPath();
 	try {
 		const parsed: unknown = JSON.parse(readFileSync(configPath, "utf8"));
 		if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
@@ -904,7 +911,7 @@ function readNagDismissedFlag(): boolean {
 }
 
 function persistNagDismissed() {
-	const configPath = join(getAgentDir(), "compact-transcript.json");
+	const configPath = userConfigPath();
 	let config: Record<string, unknown> = {};
 	try {
 		const raw = readFileSync(configPath, "utf8");
@@ -916,6 +923,7 @@ function persistNagDismissed() {
 		// File missing or unreadable — start fresh.
 	}
 	config[NAG_DISMISSED_KEY] = true;
+	mkdirSync(dirname(configPath), { recursive: true });
 	writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n", "utf8");
 }
 

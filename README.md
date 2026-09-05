@@ -61,7 +61,7 @@ Thinking suppression only applies when `hideThinkingBlock` is on; with it off, p
 
 The default can be overridden without editing the extension source:
 
-- User-wide: `~/.pi/agent/compact-transcript.json`
+- User-wide: `~/.pi/agent/extensions/pi-compact-transcript/compact-transcript.json`
 - Trusted project: `<project>/.pi/compact-transcript.json`
 
 Example:
