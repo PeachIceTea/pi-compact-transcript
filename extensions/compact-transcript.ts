@@ -5,7 +5,7 @@ import {
 	getAgentDir,
 	ToolExecutionComponent,
 } from "@earendil-works/pi-coding-agent";
-import { Markdown, Spacer, Text } from "@earendil-works/pi-tui";
+import { type Component, Markdown, Spacer, Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -23,6 +23,8 @@ const PREVIEW_MARGIN = 6;
 const BLINK_INTERVAL_MS = 400;
 // Status marker is two cells wide ("◆ ").
 const MARKER_WIDTH = 2;
+const TOOL_INDENT = "  ";
+const COMMENTARY_RAIL_WIDTH = 2;
 
 type CompactTranscriptConfig = {
 	enabled: boolean;
@@ -362,7 +364,7 @@ function stopBlinkTimer() {
 function statusMarker(theme: Theme, opts: { running?: boolean; isError?: boolean; hasResult?: boolean }): string {
 	if (opts.isError) return theme.fg("error", "◆ ");
 	if (opts.running) return theme.fg("dim", state.blinkOn ? "◆ " : "◇ ");
-	if (opts.hasResult) return theme.fg("success", "◆ ");
+	if (opts.hasResult) return theme.fg("dim", "◆ ");
 	return theme.fg("dim", "◆ ");
 }
 
@@ -599,13 +601,10 @@ function compactToolLine(
 		isError: info.isError,
 		hasResult: result != null || !!info.result,
 	});
-	if (!isBurst) {
-		return marker + theme.fg("muted", limitPlain(details));
-	}
-
-	const prefix = `${info.burstCount}× `;
-	const budget = previewWidth((process.stdout.columns || 100) - prefix.length - MARKER_WIDTH);
-	return marker + theme.fg("muted", prefix + limitPlain(details, budget));
+	const color = info.isError ? "muted" : "dim";
+	const prefix = isBurst ? `${info.burstCount}× ` : "";
+	const budget = previewWidth((process.stdout.columns || 100) - prefix.length - MARKER_WIDTH - TOOL_INDENT.length);
+	return TOOL_INDENT + marker + theme.fg(color, prefix + limitPlain(details, budget));
 }
 
 function patchToolExecutionComponent() {
@@ -675,9 +674,13 @@ function patchToolExecutionComponent() {
 			return;
 		}
 
-		this.selfRenderContainer.addChild(new Text(line, 0, 0));
+		// Clip by terminal cells at render time, including after a resize.
+		this.selfRenderContainer.addChild({
+			render: (width: number) => [truncateToWidth(line, Math.max(0, width))],
+			invalidate() {},
+		});
 		const thoughtLine = currentThoughtLine(this.toolCallId, theme);
-		if (thoughtLine) this.selfRenderContainer.addChild(new Text(thoughtLine, 0, 0));
+		if (thoughtLine) this.selfRenderContainer.addChild(new Text(TOOL_INDENT + thoughtLine, 0, 0));
 	};
 
 	proto.render = function patchedRender(width: number) {
@@ -711,23 +714,64 @@ function applyMarkdownTransformers(
 	return transformedMarkdown;
 }
 
+/** Frame rendered Markdown rather than rewriting it, preserving highlighting and transformers. */
+class CommentaryRail implements Component {
+	constructor(private readonly content: Component) {}
+
+	render(width: number): string[] {
+		// At extremely narrow widths, prefer readable content over a rail.
+		if (width <= COMMENTARY_RAIL_WIDTH) return this.content.render(width);
+		const rail = state.currentTheme?.fg("accent", "│ ") ?? "│ ";
+		return this.content.render(width - COMMENTARY_RAIL_WIDTH).map((line) => rail + line);
+	}
+
+	invalidate(): void {
+		this.content.invalidate();
+	}
+}
+
+function frameCommentary(component: any, message: any): void {
+	// Tool calls are the provider-independent signal for commentary. While
+	// streaming, leave text unframed until a tool call arrives; final answers
+	// never acquire a temporary rail.
+	if (!message.content.some((content: any) => content.type === "toolCall")) return;
+	const children = component.contentContainer?.children;
+	if (!Array.isArray(children)) return;
+	let framed = false;
+	for (let i = 0; i < children.length; i++) {
+		// Native thinking blocks have their own wrapper; only frame assistant text.
+		if (children[i] instanceof Markdown) {
+			children[i] = new CommentaryRail(children[i]);
+			framed = true;
+		}
+	}
+	if (framed) component.contentContainer.addChild(new Spacer(1));
+}
+
 function patchAssistantMessageComponent() {
 	const proto = AssistantMessageComponent.prototype as any;
 	if (typeof proto.updateContent !== "function") return;
 	const existing = proto[ASSISTANT_PATCH_KEY] as { originalUpdateContent: (...args: any[]) => any } | undefined;
 	const originalUpdateContent = existing?.originalUpdateContent ?? proto.updateContent;
 
-	proto.updateContent = function patchedUpdateContent(message: any) {
+	proto.updateContent = function patchedUpdateContent(message: any, isStreaming = this.isStreaming) {
 		state.assistantComponents.add(this);
 		state.thinkingHidden = !!this.hideThinkingBlock;
 		if (!state.thinkingHidden) clearCurrentThought();
-		if (!isEnabled() || !this.hideThinkingBlock || !Array.isArray(message?.content)) {
-			return originalUpdateContent.call(this, message);
+		if (!isEnabled() || !Array.isArray(message?.content)) {
+			return originalUpdateContent.call(this, message, isStreaming);
+		}
+		if (!this.hideThinkingBlock) {
+			const result = originalUpdateContent.call(this, message, isStreaming);
+			frameCommentary(this, message);
+			return result;
 		}
 		if (!this.contentContainer || typeof this.contentContainer.clear !== "function") {
-			return originalUpdateContent.call(this, message);
+			return originalUpdateContent.call(this, message, isStreaming);
 		}
 
+		// Preserve pi's streaming flag so Markdown transformers see partial text.
+		this.isStreaming = isStreaming;
 		this.lastMessage = message;
 		this.contentContainer.clear();
 		this.hasToolCalls = message.content.some((c: any) => c.type === "toolCall");
@@ -757,6 +801,7 @@ function patchAssistantMessageComponent() {
 				}),
 			);
 		}
+		frameCommentary(this, message);
 	};
 
 	proto[ASSISTANT_PATCH_KEY] = { originalUpdateContent };
